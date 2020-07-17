@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.71/Build/Cesium/Cesium.js"></script>
+  <script src="https://cdn.socket.io/socket.io-1.2.0.js"></script>
+  <script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+  <script src="node_modules/hashmap/hashmap.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.71/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+</head>
+
+<body>
+  <div id="cesiumContainer" style="width: 1500px; height:800px"></div>
+  <script>
+    var viewer = new Cesium.Viewer("cesiumContainer", {
+      infoBox: false,
+      selectionIndicator: false,
+      shadows: true,
+      shouldAnimate: true,
+    });
+    var longitude = 114;
+    var latitude = 22;
+    var altitude = 7175;
+
+
+
+
+    console.log("b");
+    var socket = io();
+    var altitude = new HashMap();
+    var update = new HashMap();
+    var longitude = new HashMap();
+    var latitude = new HashMap();
+    var callsign = new HashMap();
+    var groundspeed = new HashMap();
+    var track = new HashMap();
+
+    function updateaircraft(hex) {
+      var position = Cesium.Cartesian3.fromDegrees(longitude.get(hex), latitude.get(hex), altitude.get(hex));
+      var heading = Cesium.Math.toRadians(track.get(hex));
+      var pitch = 0;
+      var roll = 0;
+      var hpr = new Cesium.HeadingPitchRoll(heading, pitch, roll);
+      var orientation = Cesium.Transforms.headingPitchRollQuaternion(position, hpr);
+      var entity2 = new Cesium.EntityCollection;
+	  console.log(entity2);
+	  entity = entity2.getById(hex);
+      if (typeof entity === "undefined") {
+        entity = viewer.entities.add({
+          id : hex,
+          name: callsign.get(hex),
+          position: position,
+          orientation: orientation,
+          model: {
+            uri: '.. / Cesium_Air.glb',
+            minimumPixelSize: 128,
+            maximumScale: 10000,
+          },
+        });
+		console.log("create success");
+      } else {
+	  //entity = entity2.getById(hex);
+	  console.log(entity);
+        entity.position = position;
+        entity.orientation = orientation;
+		console.log("update success");
+      }
+    }
+
+    function removeOutdatedAircraft() {
+      var nowatime = Math.floor(Date.now());
+      for (var hex in update.keys()) {
+        if (nowatime - update.get(hex) < 3000) continue;
+        else {
+          Cesium.EntityCollection.removeById(hex);
+          update.delete(hex);
+        }
+      }
+    }
+	
+	function checkupdateaircraft(hex) {
+		if(update.has(hex)&&longitude.has(hex)&&callsign.has(hex)&&track.has(hex)){
+			console.log("update aircraft");
+			updateaircraft(hex);
+		}
+	}
+
+    socket.on('msg3', (msg) => {
+      msg = JSON.parse(msg);
+      if (!msg.LONGITUDE && typeof msg.LONGITUDE != "undefined") {
+        altitude.set(msg.AIRCRAFTHEX, msg.ALTITUDE);
+      } else {
+        longitude.set(msg.AIRCRAFTHEX, msg.LONGITUDE);
+        latitude.set(msg.AIRCRAFTHEX, msg.LATITUDE);
+        altitude.set(msg.AIRCRAFTHEX, msg.ALTITUDE);
+        //console.log(altitude.get(msg.AIRCRAFTHEX));
+      }
+      update.set(msg.AIRCRAFTHEX, Date.now());
+      checkupdateaircraft(msg.AIRCRAFTHEX);
+    });
+
+    socket.on('msg1', (msg) => {
+      msg = JSON.parse(msg);
+      callsign.set(msg.AIRCRAFTHEX, msg.CALLSIGN);
+      update.set(msg.AIRCRAFTHEX, Date.now());
+      checkupdateaircraft(msg.AIRCRAFTHEX);
+    });
+
+
+    socket.on('msg4', (msg) => {
+      msg = JSON.parse(msg);
+      groundspeed.set(msg.AIRCRAFTHEX, msg.GROUNDSPEED);
+      track.set(msg.AIRCRAFTHEX, msg.TRACK);
+      update.set(msg.AIRCRAFTHEX, Date.now());
+      checkupdateaircraft(msg.AIRCRAFTHEX);
+    });
+
+    setInterval(removeOutdatedAircraft(), 1000);
+  </script>
+</body>
+
+</html>
